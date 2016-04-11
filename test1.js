@@ -16,16 +16,34 @@ var randomKbzId = () => {
     return uuid;
 };
 
-var CreateStatement = (KBZ, value, proposal_id) => {
-    if (!KBZ || !value || !proposal_id) console.error("CreateStatement parameters are not soficient");
+var CreateStatement = (KBZ, statement, proposal_id) => {
+    if (!KBZ || !statement || !proposal_id) console.error("CreateStatement parameters are not soficient");
     var statement = {dtype : 'statement',
-                    statement : value,
-                    StatemntStatus : 1,    /*Need to add Index on StatemntStatus*/
+                    statement : statement,
+                    StatementStatus : 1,    /*Need to add Index on StatementStatus*/
                     proposals : [proposal_id]
                     };
     return r.table(KBZ).insert(statement).run()
             .error((err) => {console.log("Error in CreateStatement",err)});
 };
+
+
+var CancelStatement = (KBZ,id) => {
+    return r.table(KBZ).get(id).update({StatementStatus : 2}).run();
+}
+
+var ReplaceStatement = (KBZ,oldId,statement,proposal_id) =>{
+    CancelStatement(KBZ,oldId)
+    return CreateStatement(KBZ,statement,proposal_id);
+}
+
+var ReplaceVariable = (KBZ,variableName, newValue) => {
+    return r.table(KBZ).get('variables')(variableName).run()
+    .then((data)=>{
+        data.value = newValue;
+        return r.table(KBZ).get('variables').update(r.object(variableName, data)).run()
+    })
+}
 
 
 var CreatePulse = (KBZ) =>{
@@ -37,20 +55,21 @@ var CreatePulse = (KBZ) =>{
     pulse.Rejected = [];
     return r.table(KBZ).insert(pulse).run()
             .then((data) => {
-                return
                 r.table(KBZ)
                 .get('TheKbzDocument')
-                .update({'pulses' : {'Assigned': data.generated_keys[0]}}).run()
+                .update({'pulses' : {'Assigned': data.generated_keys[0]}}).run();
+            return Promise.resolve(data)    
         })
         .error((err) => {console.log("Error in CreatePulse: ",err)});    
 };
 
-var CreateKbz = (PARENT, member_id, proposal_id, action_name, invitetions) => { /*need to implement invetations*/
+
+var CreateKbz = (PARENT, member_id, proposal_id, action_name, invitetions) => { 
     var kbz = {id : 'TheKbzDocument',
                 parent : PARENT,
                 actions : {
-                    live: [],
-                    past: []
+                    live: {},
+                    past: {}
                     },
                 kbzStatus : 1,
                 size : 0,
@@ -63,65 +82,125 @@ var CreateKbz = (PARENT, member_id, proposal_id, action_name, invitetions) => { 
                     OnTheAir: null,
                     Past: []
                     },
-                variables : {}    
             };
-            kbz.proposals = (proposal_id ? [proposal_id] : []);
-            r.table('variables').run()
-                .then((data) => {
-                    data.forEach((variable) => {
-                        kbz.variables[variable.id] = {
-                            desc : variable.desc,
-                            name : variable.name,
-                            value: (variable.id = 'name' ? action_name || 'No Name' :  variable.value),
-                            proposals : []
-                        }
-                    });
-            });    
-            var tableName = randomKbzId();
-            return r.tableCreate(tableName).run().then(()=>{
-                return r.table(tableName).insert(kbz).run()
-                    .then((newkbz) => {
-                        CreatePulse(tableName);
-                        if (member_id) {
-                            CreateMember(tableName, PARENT, member_id, proposal_id);
-                        }
-                        return newkbz;
-                    });
-            }).error((err) => {console.log("err in CreateKbz:",err)});        
+    var variables = {id : 'variables'};
+
+        kbz.proposals = (proposal_id ? [proposal_id] : []);
+        r.table('variables').run()
+            .then((data) => {
+                data.forEach((variable) => {
+                    variables[variable.id] = {
+                        desc : variable.desc,
+                        name : variable.name,
+                        value: (variable.id === 'Name' ? action_name || 'No Name' :  variable.value),
+                        proposals : []
+                    }
+                });
+        });    
+        var tableName = randomKbzId();
+        return r.tableCreate(tableName).run().then(()=>{
+            return r.table(tableName).insert([kbz,variables]).run()
+                .then(() => {
+                    CreatePulse(tableName);
+                    if (member_id) {
+                        CreateMember(tableName, PARENT, member_id, proposal_id);
+                    }
+
+                    return tableName;
+                });
+        }).error((err) => {console.log("err in CreateKbz:",err)});        
 };
 
-CreateKbz('users','78642460-3f7e-4e38-96ef-c9f8bb2ac0a6',3,'urisFirstKibbuts',[]).then((data)=>{console.log("finaldata:",data)});
 
 var CreateMember = (KBZ, PARENT, parent_member, proposal_id,user_id) => {
-    if (!KBZ) throw "CreateMember parameter FAIL!";
+    if (!KBZ) throw new Error ("CreateMember parameter FAIL!");
     var Member = {};
     Member.parent_member = parent_member;
     Member.PARENT = PARENT;
     Member.proposals = (proposal_id ? [proposal_id] : []);
     Member.user_id = (user_id ? user_id : parent_member);
-    Member.actions = {
-        live: [],
-        past: []
+    Member.memberships = {
+        live : {},
+        past : {}
     };
     Member.memberStatus = 1;
     console.log("in CreateMember:2",Member);
     return r.table(KBZ).insert(Member)
         .then((member) => {
             console.log("in CreateMember3:",member);
-            r.table(PARENT).get(parent_member)('memberships').append([KBZ,member.generated_keys[0]]).run()
-            .then(()=> {r.table(KBZ).get('TheKbzDocument')('size').add(1)
-        });
-    }).error((err) => {console.log("err in CreateMember:",err)})        
+            return r.table(PARENT).get(parent_member)
+             .update({memberships : {live : r.row('memberships')('live').merge(r.object(KBZ, member.generated_keys[0]))}}).run()
+             .then(()=>{
+                return r.table(KBZ).get('TheKbzDocument').update({size : r.row('size').add(1)}).run()
+             }) 
+        }).error((err) => {console.log("err in CreateMember:",err)})        
 };
 
-var createUser = (userObj) =>{
-    userObj.memberships = [];
+var CreateUser = (userObj) =>{
+    userObj.memberships = {};
     return r.table('users').insert(userObj)
         //    confirmRegistration();
 };
 
-//createUser({username : "uri2",email: "uri2@gmial.com"}).then((x)=>{console.log("good",x)}).error((x)=>{console.log("bad",x)});
 
+var RemoveMember = (KBZ, member_id) => {
+    return r.table(KBZ).get(member_id).update({memberStatus : 54},{returnChanges : true})
+        .then((data) => {
+            console.log(data);
+            if (data.replaced === 0 ) return new Error("Thers no live member with the id:"+member_id);            
+            var member = data.changes[0].new_val;
+            console.log("In RemoveMember:", member);
+            var p1 = r.table(member.PARENT).get(member.parent_member).update({memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))}}).run(),
+                p2 = r.table(member.PARENT).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
+
+            if (member.memberships.live === {}) return Promise.all([p1,p2]).then(()=>{return member});
+
+            return Object.keys(member.memberships.live).forEach((son)=>{
+                console.log("SON:",son)
+                return RemoveMember(son, member.memberships.live[son])
+                .then(data => {
+                    return member
+                })
+            })
+        })
+}
+
+
+var CreateAction = (PARENT, proposal_id, action_name) => {
+    CreateKbz(PARENT, 0, proposal_id, action_name)
+        .then((action_id) => {
+            console.log('action_id',action_id);
+            r.table(PARENT).get('TheKbzDocument').update({'actions' : {'live' : r.row('actions')('live').append(action_id)}}).run()
+            .then(()=>{return action_id})
+        }).error((err) => {console.log("err in CreateAction:",err)});
+}
+
+
+var RemoveAction = (ACTION,proposal_id) => {
+    return r.table(KBZ).get(member_id).update({status : 0},{returnChanges : true})
+        .then((data) => {
+            var member = data.new_val;
+            console.log("In RemoveMember:", data);            
+            var p1 = r.table(member.PARENT).get(member.parent_member).update({memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))}}).run(),
+                p2 = r.table(member.PARENT).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
+
+            if (member.memberships.live === {}) return Promise.all([p1,p2]);
+
+            return Object.keys(member.memberships.live).forEach((son)=>{
+                return RemoveMember(son.kbz_id, son.member_id)
+                .then(data => {
+                    console.log("end:",data);
+                })
+            })
+        })
+}
+
+
+var CreateCommitteeMember = (ACTION, KBZ, member_id, proposal_id,user_id) => {
+    console.log("In CreateCommitteeMember: ", ACTION, member_id, proposal_id);
+    if (!ACTION || !KBZ) throw new Error("CreateCommitteeMember: no action");
+    return CreateMember(ACTION,KBZ,member_id,proposal_id,user_id).error((err) => {console.log("err in CreateMember:",err)})
+};
 
 var InitiateVariables = () => {
  return r.table('variables').insert([{
@@ -227,3 +306,23 @@ var InitiateVariables = () => {
 }
 
 
+// test function
+
+
+var testStatement = (k) => {
+    CreateStatement(k,"hel all",1).then((data)=>{
+        ReplaceStatement(k,data.generated_keys[0],"hell fauck",2).then((da) => {
+            CancelStatement(k,da.generated_keys[0]).then((d)=>{
+                console.log('testStatement:', data,da,d);
+            })
+        })
+    })    
+}
+
+//CreateKbz('users','78642460-3f7e-4e38-96ef-c9f8bb2ac0a6',3,'urisFirstKibbuts',[]).then((data)=>{console.log("kbz:",data)});
+//CreateMember('KBZd651089ed4c8e987363d3dfc8385c','KBZbb2b7593b4d14af63d2b425502b99','e3e10417-e739-48f4-b365-cb5d42d34f0e',225,"e3e10417-e739-48f4-b365-cb5d42d34f0e");
+//CreateUser({username : "uri2",email: "uri2@gmial.com"}).then((x)=>{console.log("good",x)}).error((x)=>{console.log("bad",x)});
+//CreateAction('KBZbb2b7593b4d14af63d2b425502b99',190133,"FisreeetAction")
+//CreateStatement('KBZ56a3acbb444cb9b9b61c800c2e5f3',"letterebelight",112233);
+//ReplaceVariable('KBZe798d78114d9588e7e11660532221','CM',68);
+RemoveMember('KBZbb2b7593b4d14af63d2b425502b99','e3e10417-e739-48f4-b365-cb5d42d34f0e').then((d)=>{console.log("dd:",d)});

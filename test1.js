@@ -143,18 +143,24 @@ var CreateUser = (userObj) =>{
 };
 
 
-var RemoveMember = (KBZ, member_id) => {
-    return r.table(KBZ).get(member_id).update({memberStatus : 54},{returnChanges : true})
+var RemoveMember = (KBZ, member_id,proposal_id) => {
+    return r.table(KBZ).get(member_id).update(
+        {
+            memberStatus : 2,
+            proposals : r.row('proposals').append(proposal_id)
+        },{ returnChanges : true })
         .then((data) => {
             console.log(data);
             if (data.replaced === 0 ) return new Error("Thers no live member with the id:"+member_id);            
             var member = data.changes[0].new_val;
             console.log("In RemoveMember:", member);
-            var p1 = r.table(member.PARENT).get(member.parent_member).update({memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))}}).run(),
-                p2 = r.table(member.PARENT).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
-
-            if (member.memberships.live === {}) return Promise.all([p1,p2]).then(()=>{return member});
-
+            var p1 =  r.table(member.PARENT).get(member.parent_member).update(
+                {
+                    memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))},
+                    memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}
+                }).run(),
+                //p2 = r.table(member.PARENT).get(member.parent_member).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
+            if (member.memberships.live === {}) return p1.then(()=>{return member});
             return Object.keys(member.memberships.live).forEach((son)=>{
                 console.log("SON:",son)
                 return RemoveMember(son, member.memberships.live[son])
@@ -176,25 +182,33 @@ var CreateAction = (PARENT, proposal_id, action_name) => {
 }
 
 
-var RemoveAction = (ACTION,proposal_id) => {
-    return r.table(KBZ).get(member_id).update({status : 0},{returnChanges : true})
+var RemoveMember = (ACTION,,proposal_id) => {
+    return r.table(KBZ).get(member_id).update(
+        {
+            memberStatus : 2,
+            proposals : r.row('proposals').append(proposal_id)
+        },{ returnChanges : true })
         .then((data) => {
-            var member = data.new_val;
-            console.log("In RemoveMember:", data);            
-            var p1 = r.table(member.PARENT).get(member.parent_member).update({memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))}}).run(),
-                p2 = r.table(member.PARENT).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
-
-            if (member.memberships.live === {}) return Promise.all([p1,p2]);
-
+            console.log(data);
+            if (data.replaced === 0 ) return new Error("Thers no live member with the id:"+member_id);            
+            var member = data.changes[0].new_val;
+            console.log("In RemoveMember:", member);
+            var p1 =  r.table(member.PARENT).get(member.parent_member).update(
+                {
+                    memberships : {live : r.literal(r.row('memberships')('live').without(KBZ))},
+                    memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}
+                }).run(),
+                //p2 = r.table(member.PARENT).get(member.parent_member).update({memberships : {past : r.row('memberships')('past').merge(r.object(KBZ,member.id))}}).run();
+            if (member.memberships.live === {}) return p1.then(()=>{return member});
             return Object.keys(member.memberships.live).forEach((son)=>{
-                return RemoveMember(son.kbz_id, son.member_id)
+                console.log("SON:",son)
+                return RemoveMember(son, member.memberships.live[son])
                 .then(data => {
-                    console.log("end:",data);
+                    return member
                 })
             })
         })
 }
-
 
 var CreateCommitteeMember = (ACTION, KBZ, member_id, proposal_id,user_id) => {
     console.log("In CreateCommitteeMember: ", ACTION, member_id, proposal_id);

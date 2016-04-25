@@ -83,7 +83,7 @@ var CreatePulse = (KBZ) =>{
 };
 
 
-var CreateKbz = (PARENT, member_id, proposal_id, name, invitetions) => { 
+var CreateKbz = (PARENT, proposal_id, name, invitetions) => { 
     var kbz = {id : 'TheKbzDocument',
                 parent : PARENT,
                 status : 1,
@@ -123,9 +123,9 @@ var CreateKbz = (PARENT, member_id, proposal_id, name, invitetions) => {
             return r.table(tableName).insert([kbz,variables]).run()
                 .then(() => {
                     var p1 = CreatePulse(tableName),
-                        p2 = Promise.resolve({})
-                    if (member_id) {
-                        p2 = r.table(PARENT).get(member_id).then((parent)=> CreateMember(tableName, PARENT, member_id, proposal_id,parent.userObj));
+                        p2 = Promise.resolve({}),
+                    if (PARENT === 'users') {
+                        p2 = Promise.all(invitetions.map((invite) =>  CreateMember(tableName, 'users', invite.id, 0, invite)))
                     }
 
                     return Promise.all([p1,p2]).then(() => tableName);
@@ -163,7 +163,7 @@ var CreateMember = (KBZ, PARENT, parent_member, proposal_id, userObj) => {
 var CreateUser = (userObj) =>{
     userObj.memberships = {};
     return r.table('users').insert(userObj)
-    .then((user)=> Promise.resolve({KBZ : KBZ , id : user.generated_keys[0], desc : "New User has been Created" }),
+    .then((user)=> Promise.resolve({KBZ : 'users' , id : user.generated_keys[0], desc : "New User has been Created" }),
           (err) => Promise.reject(new Error("err in CreateUser:" + err)))
     };
 
@@ -552,9 +552,7 @@ var InitiateVariables = () => {
     ]).run()
 }
 
-
-// test function
-
+/*-------------------------Tests--------------------------------------*/
 
 var testStatement = (k) => {
     CreateStatement(k,"hel all",1).then((data)=>{
@@ -566,9 +564,8 @@ var testStatement = (k) => {
     })    
 }
 
-//testStatement('KBZbb2b7593b4d14af63d2b425502b99')
 
-var test = ()=> {
+var kbzHiarchyTest = ()=> {
     CreateKbz('users',0,0,'urisFirstKibbuts',[]).then((kbz)=>{
         console.log("kbz:",kbz)
         Promise.all([
@@ -588,7 +585,20 @@ var test = ()=> {
                  }).then((pa)=> console.log("pa",pa),(err)=> console.log("err:",err))
 
                 )})})}).catch((err)=> console.log("err:",err))
+}
 
+var pulseTeast = () => {
+    var users = ['uri1,uri2,uri3,uri4,uri5,uri6'];
+    users.map((username) => { return CreateUser({user_name : username, email : username+"@gmail.com", image : "http://phootoos/"+username+".jpg",age :56})})
+    .then((users) => {
+        CreateKbz('users',3,"PULSEtestKBZ",[users[0],users[1],users[2]])
+        .then((kbz) => {
+            
+            var p1 = CreateProposal(kbz,users[4],"let me in","ME",users[4].id,{parent : 'users',parent_member : users[4].id}),
+                p2 = CreateProposal(kbz,users[3],"let me in","ME",users[3].id,{parent : 'users',parent_member : users[3].id}),
+                p3 = CreateProposal(kbz,users[4],"let me in","NS",users[4].id,{statement : 'hey benn trying to...'}),
+        })
+    })
 }
 
 //test();

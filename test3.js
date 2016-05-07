@@ -20,7 +20,7 @@ var CreateStatement = (KBZ, statement, proposal_id) => {
     if (!KBZ || !statement || !proposal_id) return Promise.reject(new Error ("CreateStatement wrong parameters"));
     var statement = {dtype : 'statement',
                     statement : statement,
-                    StatementStatus : 1,    /*Need to add Index on StatementStatus*/
+                    StatementStatus : 1,    
                     proposals : [proposal_id]
                     };
     return r.table(KBZ).insert(statement).run()
@@ -55,8 +55,10 @@ var ChangeVariable = (KBZ, variableName, newValue, proposal_id) => {
 */
 
 var ChangeVariable = (KBZ, variableName, newValue, proposal_id) => {
-    return r.table(KBZ).get('variables')(variableName).run()
+    console.log("in ChangeVariable:",variableName, newValue, proposal_id)
+    return r.table(KBZ).get('variables')(variableName)
         .then((data)=>{
+            console.log("in ChangeVariable: data: ",data)
             data.value = newValue;
             data.proposals.push(proposal_id);
             return r.table(KBZ).get('variables').update(r.object(variableName, data)).run()
@@ -84,6 +86,7 @@ var CreatePulse = (KBZ) =>{
 
 
 var CreateKbz = (PARENT, proposal_id, name, invitetions) => { 
+console.log("in CreateKbz:",PARENT, proposal_id, name)   
     var kbz = {id : 'TheKbzDocument',
                 parent : PARENT,
                 status : 1,
@@ -119,6 +122,7 @@ var CreateKbz = (PARENT, proposal_id, name, invitetions) => {
                 });
         });    
         var tableName = randomKbzId();
+        kbz.kbzid = tableName;
         return r.tableCreate(tableName).run().then(()=>{
             return r.table(tableName).insert([kbz,variables]).run()
                 .then(() => {
@@ -186,7 +190,7 @@ var RemoveMember = (KBZ, member_id, proposal_id) => {
         {
             memberStatus : 2,
             proposals : proposal_id ? r.row('proposals').append(proposal_id) : [0]
-        },{ returnChanges : true })
+        },{ returnChanges : true }).run()
         .then((data) => {
             if (data.replaced === 0 ) return Promise.reject(new Error("Thers no live member in:" + KBZ + " with the id:"+ member_id));            
             var member = data.changes[0].new_val;
@@ -214,7 +218,7 @@ var RemoveAction = (ACTION,proposal_id) => {
     return r.table(ACTION).get('TheKbzDocument').update(
         {   kbzStatus : 2,
             proposals : r.row('proposals').append(proposal_id)
-        },{ returnChanges : true })
+        },{ returnChanges : true }).run()
         .then((data) => {
             console.log(data);
             if (data.replaced === 0 ) return Promise.reject(new Error("Thers no live Action in:" + ACTION));            
@@ -288,7 +292,7 @@ var AssignetoPulse = (KBZ, proposal_id, pulse_id) => {
     console.log("In AssignetoPulse", proposal_id,pulse_id);
     return Promise.all([
         r.table(KBZ).get(proposal_id).update({proposalStatus : 4}).run(),
-        r.table(KBZ).get(pulse_id).update({Assigned : r.row('Assigned').setInsert(proposal_id)})
+        r.table(KBZ).get(pulse_id).update({Assigned : r.row('Assigned').setInsert(proposal_id)}).run()
         ]).then((d) => d, (d)=>{console.log("err:",d)})
 };
 
@@ -352,14 +356,13 @@ var pulseSupport = (KBZ, member_id) => {
     }
 
 var vote = (KBZ, proposal_id, member_id, vote) => {
-    console.log("vote param:".KBZ, proposal_id, member_id, vote)
+    console.log("vote param:",KBZ, proposal_id, member_id, vote)
     var pro = 0,
         against = 0;
     if (vote === 1) pro = 1
         else against = 1;
-    console.log(pro,against);
     return r.table(KBZ).get(proposal_id).update(function (proposal) {
-        return r.branch(proposal('proposalStatus').ne(5),proposal,
+        return r.branch(proposal('proposalStatus').ne(6),proposal,
         proposal.merge(r.branch(proposal('votes')('members').offsetsOf(member_id).isEmpty(),
             {votes : {
                 pro : proposal('votes')('pro').add(pro),
@@ -382,17 +385,16 @@ var Pulse = (KBZ) => {
         var p1 = Promise.resolve({})
         if(tkd.pulses.OnTheAir) { p1 = PulseOnTheAir(KBZ, tkd.pulses.OnTheAir, variables) }  
         var p2 = r.table(KBZ).get(tkd.pulses.Assigned).then((Assigned)=>{
-                console.log("Assigned:",Assigned.Assigned)
-                var p1 = r.table(KBZ).getAll(... Assigned.Assigned).update({proposalStatus : 6}).run()
+                if (Assigned.Assigned)  r.table(KBZ).getAll(... Assigned.Assigned).update({proposalStatus : 6}).run() 
                 Assigned.pulseStatus = 2
                 Assigned.OnTheAir = Assigned.Assigned
                 Assigned.Assigned = []
                 var p2 = r.table(KBZ).get(Assigned.id).replace(Assigned).run()
-                return Promise.all([p1,p2])
+                return p2 //Promise.all([p1,p2])
                 }),
-            p3 = r.table(KBZ).filter({proposalStatus : 3}).update({age : r.row('age').add(1)}).then(()=>{
+            p3 = r.table(KBZ).filter({proposalStatus : 3}).update({age : r.row('age').add(1)}).run().then(()=>{
                 console.log("pulse p3 :",variables.MaxAge.value)
-                return r.table(KBZ).filter(r.row("proposalStatus").eq(3).and(r.row('age').gt(variables.MaxAge.value))).update({proposalStatus : 2})
+                return r.table(KBZ).filter(r.row("proposalStatus").eq(3).and(r.row('age').gt(variables.MaxAge.value))).update({proposalStatus : 2}).run()
                 }),
             p4 = CreatePulse(KBZ).then((pulse)=> {
                         tkd.pulses.Past.push(tkd.pulses.OnTheAir)
@@ -403,6 +405,7 @@ var Pulse = (KBZ) => {
                             members: [],
                             percent: 0
                         };
+                        console.log("pulse p4 :",tkd.pulses)
                         return r.table(KBZ).get('TheKbzDocument').update(tkd).run()
                 })
    
@@ -416,7 +419,7 @@ var PulseOnTheAir = (KBZ, pulse_id, variables) => {
     return r.table(KBZ).get(pulse_id)
         .then((OnTheAir) => {
             OnTheAir.pulseStatus = 3;
-            if (!OnTheAir.OnTheAir[0]) return r.table(KBZ).get(pulse_id).update(OnTheAir);
+            if (!OnTheAir.OnTheAir[0]) return r.table(KBZ).get(pulse_id).update(OnTheAir).run();
             return ExecuteOnTheAir(KBZ, OnTheAir, variables)
     })
 }        
@@ -428,7 +431,8 @@ var ExecuteOnTheAir = (KBZ, OnTheAir, variables) => {
         r.table(KBZ).get(proposal_id).then((proposal)=>{
             var variable = variables[proposal.type],
                 p1 = Promise.resolve({KBZ : KBZ, id : proposal_id, desc : "proposal "+proposal_id+" rejected"})
-            console.log("IN ExecuteOnTheAir proposal4:", proposal.votes, variable.value);
+            console.log("ExecuteOnTheAir variable:",variable)                
+            console.log("IN ExecuteOnTheAir proposal4:", proposal.votes, variable.value,proposal.votes.pro / (proposal.votes.against + proposal.votes.pro) * 100 >= variable.value);
             if (proposal.votes.pro / (proposal.votes.against + proposal.votes.pro) * 100 >= variable.value) {
                 OnTheAir.Approved.push(proposal_id)
                 OnTheAir.OnTheAir.filter((z)=> z != proposal_id)
@@ -439,11 +443,13 @@ var ExecuteOnTheAir = (KBZ, OnTheAir, variables) => {
                     OnTheAir.Rejected.push(proposal_id)
                     proposal.proposalStatus = 8 /*rejected*/
                 }
-            var p2 = r.table(KBZ).get(proposal_id).update(proposal)
-            return Promise([p1,p2]).then((x)=> x[0]);
-        })
+            console.log("ExecuteOnTheAir proposal:",proposal)                    
+            var p2 = r.table(KBZ).get(proposal_id).update(proposal).run()
+            return Promise([p1,p2]).then((d) => {console.log("-----------:",d); return d[0]})
+        }).then((d) => d,(err) => console.log("souldex:",err))
     )
-    Execution.push(r.table(KBZ).get(OnTheAir.id).update(OnTheAir))
+    Execution.map((x)=> console.log("Execution:",x))
+    Execution.push(r.table(KBZ).get(OnTheAir.id).update(OnTheAir).run())
     return Promise.all(Execution).then((d) => d,(err) =>  new Error('Error in ExecuteOnTheAir' + err))
 }
 
@@ -451,15 +457,15 @@ var ExecuteOnTheAir = (KBZ, OnTheAir, variables) => {
 var Execute = function(KBZ, proposal) {
     console.log("executing proposal type: ", proposal.type);
     var p1 = Promise.resolve({})
-    if (proposal.type === "ME") {p1 = CreateMember(KBZ, proposal.parent ,Proposal.parent_member, proposal.id, proposal.userObj)}
+    if (proposal.type === "ME") {p1 = CreateMember(KBZ, proposal.parent ,proposal.parent_member, proposal.id, proposal.userObj)}
      
     if (proposal.type === "NS") {p1 = CreateStatement(KBZ, proposal.statement, proposal.id)}
 
-    if (proposal.type === "CS") {p1 = CancelStatement(KBZ , proposal.statement_id,proposal.id)}
+    if (proposal.type === "CS") {p1 = CancelStatement(KBZ , proposal.statement_id, proposal.id)}
 
-    if (proposal.type === "RS") {p1 = ReplaceStatement(KBZ , proposal.statement_id, statement, proposal.id)}
+    if (proposal.type === "RS") {p1 = ReplaceStatement(KBZ , proposal.statement_id, proposal.statement, proposal.id)}
 
-    if (proposal.type === "CV") {p1 = ChangeVariable(KBZ , proposal.variableName, newValue, proposal.id)}
+    if (proposal.type === "CV") {p1 = ChangeVariable(KBZ , proposal.variableName, proposal.newValue, proposal.id)}
 
     if (proposal.type === "CA") {p1 = CreateAction(KBZ, proposal.id, proposal.actionName)}
 
@@ -470,12 +476,13 @@ var Execute = function(KBZ, proposal) {
     if (proposal.type === "RA") {p1 = RemoveAction(proposal.action_id, proposal.actionName)}     
 
     if (proposal.type === "RAM") {p1 = RemoveActionMember(proposal.action_id, proposal.member_id, proposal.id, proposal.userObj)}          
-    return p1;
+    return p1.then((d) => {console.log("exec:",d); return d},(err) => console.log("exec:",err));
 };
 
 
 var InitiateVariables = () => {
- return r.table('variables').insert([{
+ r.tableCreate('variables').then(()=>
+    r.table('variables').insert([{
         id :"PulseSupport",
             "type": "PUS",
             "name": "Pulse Support",
@@ -490,7 +497,7 @@ var InitiateVariables = () => {
             "desc": "The precentage of members support nedded to assiged a Proposal to a pulse.",
             "proposals": []
         },
-        {id : "ChangeVariable" ,
+        {id : "CV" ,
             "type": "CV",
             "name": "Change Variable",
             "value": 50,
@@ -525,8 +532,8 @@ var InitiateVariables = () => {
             "desc": "The precentage of members vote nedded to Cancel Statement.",
             "proposals": []
         },
-        {id : "NA",
-            "type": "NA",
+        {id : "CA",
+            "type": "CA",
             "name": "New Action",
             "value": 50,
             "desc": "The precentage of members vote nedded to accept a new Action.",
@@ -575,6 +582,7 @@ var InitiateVariables = () => {
             "proposals": []
         }        
     ]).run()
+    )
 }
 
 /*-------------------------Tests--------------------------------------*/
@@ -623,8 +631,8 @@ var pulseTest = () => {
             r.table(kbz).filter(r.row('memberStatus').eq(1))('id')
             .then((members)=>{
                 console.log('members: ',members)
-                var p1 = CreateProposal(kbz,null,"let me in","ME",users[4].id,{parent : 'users',parent_member : users[4].id, userObj : users[4].obj}),
-                    p2 = CreateProposal(kbz,null,"let me in","ME",users[3].id,{parent : 'users',parent_member : users[4].id, userObj : users[3].obj}),
+                var p1 = CreateProposal(kbz,null,"let me in user5","ME",users[4].id,{parent : 'users',parent_member : users[4].id, userObj : users[4].obj}),
+                    p2 = CreateProposal(kbz,null,"let me in user4","ME",users[3].id,{parent : 'users',parent_member : users[3].id, userObj : users[3].obj}),
                     p3 = CreateProposal(kbz,members[0],"holes in my head","NS",0,{statement : 'hey beenn trying to...'}),                
                     p4 = CreateProposal(kbz,members[1],"freaky like that","CV",0,{variableName : 'Name', newValue : "la freak"}),
                     p5 = CreateProposal(kbz,members[0],"lets doo some work!!","CA",0,{actionName : "FloosEveryMornuing"})
@@ -651,25 +659,28 @@ var pulseTest = () => {
                     var p1 = vote(kbz,proposals[0].id,members[1],1),
                         p2 = vote(kbz,proposals[0].id,members[0],1),
                         p3 = vote(kbz,proposals[2].id,members[2],1),
-                        p4 = vote(kbz,proposals[2].id,members[1],0),
+                        p4 = vote(kbz,proposals[2].id,members[1],1),
                         p5 = vote(kbz,proposals[1].id,members[2],1),
                         p6 = vote(kbz,proposals[4].id,members[0],1),
                         p7 = vote(kbz,proposals[4].id,members[2],1),
-                        p8 = vote(kbz,proposals[3].id,members[0],0)
-                return Promise.all([p1,p2,p3,p4,p5,p6,p7])
-                .then(()=> {
+                        p8 = vote(kbz,proposals[3].id,members[0],1),
+                        p9 = vote(kbz,proposals[3].id,members[0],1)                        
+                return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8,p9])
+                .then((x)=> {
+                    console.log("SUPPORT2:",x)
                     var p1 = pulseSupport(kbz,members[1]),
                         p2 = pulseSupport(kbz,members[0])
-                return Promise.all([p1,p2])
+                return Promise.all([p1,p2]).then((x) =>console.log('pulseSupport: ',x))
                 })                
                 })
             },(err)=> console.log("supporterr",err))
             },(err)=> console.log("proposalerr",err))
-        })
-    })
-    }).then((d)=> console.log("d:",d), (err)=> console.log("errr:",err))
+        },(err)=> console.log("memberss",err))
+    },(err)=> console.log("kbzz",err))
+    },(err)=> console.log("end",err)).then((d)=> console.log("d:",d), (err)=> console.log("errr:",err))
 }    
 
+//InitiateVariables();
 pulseTest();
 //CreateKbz('users','78642460-3f7e-4e38-96ef-c9f8bb2ac0a6',3,'urisFirstKibbuts',[]).then((data)=>{console.log("kbz:",data)});
 //CreateMember('KBZd651089ed4c8e987363d3dfc8385c','KBZbb2b7593b4d14af63d2b425502b99','e3e10417-e739-48f4-b365-cb5d42d34f0e',225,"e3e10417-e739-48f4-b365-cb5d42d34f0e");

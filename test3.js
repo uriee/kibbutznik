@@ -17,10 +17,10 @@ var randomKbzId = () => {
 };
 
 var CreateStatement = (KBZ, statement, proposal_id) => {
-    if (!KBZ || !statement || !proposal_id) return Promise.reject(new Error ("CreateStatement wrong parameters"));
+    if (!KBZ || !statement || !proposal_id) return Promise.reject(new Error ("CreateStatement wrong parameters:" + statement + " : " + proposal_id));
     var statement = {dtype : 'statement',
                     statement : statement,
-                    StatementStatus : 1,    
+                    statementStatus : 1,    
                     proposals : [proposal_id]
                     };
     return r.table(KBZ).insert(statement).run()
@@ -30,13 +30,13 @@ var CreateStatement = (KBZ, statement, proposal_id) => {
 
 
 var CancelStatement = (KBZ, id, proposal_id) => {
-    return r.table(KBZ).get(id).update({StatementStatus : 2},{proposals : r.row('proposals').append(proposal_id)}).run()
+    return r.table(KBZ).get(id).update({statementStatus : 2, proposals : r.row('proposals').append(proposal_id)}).run()
         .then(() => {return Promise.resolve({KBZ: KBZ, id : id, desc : "Statement had been Canceled"})},
              (err) => {return Promise.reject(new Error ("Error in CancelStatement :" + err))});    
 }
 
 var ReplaceStatement = (KBZ,oldId,statement,proposal_id) =>{
-    p1 = CancelStatement(KBZ,oldId)
+    p1 = CancelStatement(KBZ,oldId,proposal_id)
     p2 = CreateStatement(KBZ,statement,proposal_id)
     return Promise.all([p1,p2]).then((data)=>{
         return Promise.resolve(data[1])
@@ -55,7 +55,6 @@ var ChangeVariable = (KBZ, variableName, newValue, proposal_id) => {
 */
 
 var ChangeVariable = (KBZ, variableName, newValue, proposal_id) => {
-    console.log("in ChangeVariable:",variableName, newValue, proposal_id)
     return r.table(KBZ).get('variables')(variableName)
         .then((data)=>{
             console.log("in ChangeVariable: data: ",data)
@@ -131,7 +130,7 @@ console.log("in CreateKbz:",PARENT, proposal_id, name)
                         p2 = Promise.resolve({})
                     if (PARENT === 'users') {
                         p2 = Promise.all(invitetions.map((invite) =>  CreateMember(tableName, 'users', invite.id, 0, invite)))
-                        .then((d) => {console.log(d)},(err)=> {console.log(err)})
+                        .then((d) => d, (err)=> {console.log(err)})
                     }
 
                     return Promise.all([p1,p2]).then(() => tableName);
@@ -244,6 +243,7 @@ var RemoveAction = (ACTION,proposal_id) => {
 
 
 var CreateActionMember = (ACTION, KBZ, member_id, proposal_id, userObj) => {
+        console.log("cacaca:",ACTION, KBZ, member_id, proposal_id, userObj)
         if (!ACTION || !KBZ) return Promise.reject(new Error("CreateActionMember: no action"));
         return CreateMember(ACTION,KBZ,member_id,proposal_id, userObj)
     };
@@ -253,6 +253,7 @@ var RemoverActionMember = (PARENT, member_id, proposal_id, userObj) => {
 } 
 
 var CreateProposal = (KBZ, initiator, body, type, fid, uniq) => {
+    console.log("in CreateProposal:" , body, type, fid, uniq)
     var Proposal = {};
     Proposal.initiator = initiator;
     Proposal.body = body;
@@ -271,7 +272,7 @@ var CreateProposal = (KBZ, initiator, body, type, fid, uniq) => {
         "members": []
     };
     Proposal = Object.assign({},Proposal,uniq);
-   
+      console.log("in CreateProposa2:" ,Proposal.id) 
     return r.table(KBZ).insert(Proposal).run()
         .then((data) => {
             var proposal_id = data.generated_keys[0],
@@ -306,7 +307,7 @@ var Support = (KBZ, proposal_id, member_id) => {
             var size = data[0].size,
                 pulse = data[0].pulses.Assigned,
                 ProposalSupport = data[1]
-                console.log("support2:",size,pulse,ProposalSupport)
+                //console.log("support2:",size,pulse,ProposalSupport)
                 return r.table(KBZ).get(proposal_id).update(function (proposal) {
                     return r.branch(proposal('proposalStatus').ne(3),proposal,
                            proposal.merge(r.branch(proposal('support')('members').offsetsOf(member_id).isEmpty(),
@@ -334,7 +335,6 @@ var Support = (KBZ, proposal_id, member_id) => {
 
 var pulseSupport = (KBZ, member_id) => {
         return r.table(KBZ).get('variables')('PulseSupport')('value').then((PulseSupport)=> {
-            console.log("PulseSupport",PulseSupport)
             return r.table(KBZ).get('TheKbzDocument').update(function (kbz) {   
                         return kbz.merge(r.branch(kbz('pulsesupport')('members').offsetsOf(member_id).isEmpty(),
                            {pulsesupport : {
@@ -349,7 +349,7 @@ var pulseSupport = (KBZ, member_id) => {
                                     }}))
                             },{ returnChanges : true }).run().then((P) => {
                             var kbz = P.changes[0].new_val;
-                            console.log("ZZZZZZZZZZZZZZZZZZZZZZZZZZ:",kbz.pulsesupport.percent < PulseSupport,kbz.pulsesupport.percent , PulseSupport)
+                            console.log("pulse support:",kbz.pulsesupport.percent < PulseSupport,kbz.pulsesupport.percent )
                             if (kbz.pulsesupport.percent < PulseSupport) return Promise.resolve({KBZ : KBZ, id : kbz ,desc : 'Pulse just got supported'})
                                 else return Pulse(KBZ).then(()=> Promise.resolve({KBZ : KBZ, id : kbz ,desc : 'Pulsing!!!'}));
               })             
@@ -357,7 +357,7 @@ var pulseSupport = (KBZ, member_id) => {
     }
 
 var vote = (KBZ, proposal_id, member_id, vote) => {
-    console.log("vote param:",KBZ, proposal_id, member_id, vote)
+    //console.log("vote param:",KBZ, proposal_id, member_id, vote)
     var pro = 0,
         against = 0;
     if (vote === 1) pro = 1
@@ -386,7 +386,8 @@ var Pulse = (KBZ) => {
         var p1 = Promise.resolve({})
         if(tkd.pulses.OnTheAir) { p1 = PulseOnTheAir(KBZ, tkd.pulses.OnTheAir, variables) }  
         var p2 = r.table(KBZ).get(tkd.pulses.Assigned).then((Assigned)=>{
-                if (Assigned.Assigned)  {r.table(KBZ).getAll(... Assigned.Assigned).update({proposalStatus : 6}).run(); }
+            //console.log("tkd.pulses.Assigned:",tkd.pulses.Assigned,Assigned)
+                if (Assigned.Assigned.length > 0 ) r.table(KBZ).getAll(... Assigned.Assigned).update({proposalStatus : 6}).run()
                 console.log("pulse p3 :",Assigned)
                 Assigned.pulseStatus = 2
                 Assigned.OnTheAir = Assigned.Assigned
@@ -395,9 +396,11 @@ var Pulse = (KBZ) => {
                 return p2 //Promise.all([p1,p2])
                 }),
             p3 = r.table(KBZ).filter({proposalStatus : 3}).update({age : r.row('age').add(1)}).run().then(()=>{
-                console.log("pulse p3 :",variables.MaxAge.value)
+                console.log("pulse p35 :",variables.MaxAge.value)
                 return r.table(KBZ).filter(r.row("proposalStatus").eq(3).and(r.row('age').gt(variables.MaxAge.value))).update({proposalStatus : 2}).run()
                 }),
+            p5 = r.table(KBZ).filter({memberStatus : 1}).update({age : r.row('age').add(1)}).run(),
+                            
             p4 = CreatePulse(KBZ).then((pulse)=> {
                         tkd.pulses.Past.push(tkd.pulses.OnTheAir)
                         tkd.pulses.OnTheAir = tkd.pulses.Assigned
@@ -411,8 +414,8 @@ var Pulse = (KBZ) => {
                         return r.table(KBZ).get('TheKbzDocument').update(tkd).run()
                 })
    
-        return Promise.all([p1,p2,p3,p4]).then((data)=> {console.log("retrun from pulse0",data); return data;},(err)=> console.log(err))
-    }).then((data)=> console.log("retrun from pulse",data),(err)=> console.log(err))
+        return Promise.all([p1,p2,p3,p4,p5])
+    })
 }
 
 
@@ -428,16 +431,16 @@ var PulseOnTheAir = (KBZ, pulse_id, variables) => {
 
 
 var ExecuteOnTheAir = (KBZ, OnTheAir, variables) => {
-    console.log("ExecuteOnTheAir",OnTheAir)
-    Execution = OnTheAir.OnTheAir.map((proposal_id) =>
+    //console.log("ExecuteOnTheAir",OnTheAir)
+
+    return Promise.all(OnTheAir.OnTheAir.map((proposal_id) =>
         r.table(KBZ).get(proposal_id).then((proposal)=>{
             var variable = variables[proposal.type],
                 p1 = Promise.resolve({KBZ : KBZ, id : proposal_id, desc : "proposal "+proposal_id+" rejected"})
-            console.log("ExecuteOnTheAir variable:",variable)                
+            //console.log("ExecuteOnTheAir variable:",variable)                
             console.log("IN ExecuteOnTheAir proposal4:", proposal.votes, variable.value,proposal.votes.pro / (proposal.votes.against + proposal.votes.pro) * 100 >= variable.value);
             if (proposal.votes.pro / (proposal.votes.against + proposal.votes.pro) * 100 >= variable.value) {
                 OnTheAir.Approved.push(proposal_id)
-                OnTheAir.OnTheAir.filter((z)=> z != proposal_id)
                 proposal.proposalStatus = 7  /* Approved */
                 p1 =  Execute(KBZ, proposal)
             }
@@ -445,14 +448,15 @@ var ExecuteOnTheAir = (KBZ, OnTheAir, variables) => {
                     OnTheAir.Rejected.push(proposal_id)
                     proposal.proposalStatus = 8 /*rejected*/
                 }
-            console.log("ExecuteOnTheAir proposal:",proposal)                    
+            //console.log("ExecuteOnTheAir proposal:",proposal)                    
             var p2 = r.table(KBZ).get(proposal_id).update(proposal).run()
-            return Promise([p1,p2]).then((d) => {console.log("-----------:",d); return d[0]})
-        }).then((d) => d,(err) => console.log("souldex:",err))
-    )
-    Execution.map((x)=> console.log("Execution:",x))
-    Execution.push(r.table(KBZ).get(OnTheAir.id).update(OnTheAir).run())
-    return Promise.all(Execution).then((d) => d,(err) =>  new Error('Error in ExecuteOnTheAir' + err))
+        
+            return Promise.all([p1,p2])//.then((d) => {console.log("-----------:",d); return d[0]})
+        },(err) => console.log("souldex:",proposal_id,err))
+        )
+    ).then((exec)=> { r.table(KBZ).get(OnTheAir.id).update(OnTheAir).run()
+                      return exec
+                  })
 }
 
 
@@ -478,7 +482,7 @@ var Execute = function(KBZ, proposal) {
     if (proposal.type === "RA") {p1 = RemoveAction(proposal.action_id, proposal.actionName)}     
 
     if (proposal.type === "RAM") {p1 = RemoveActionMember(proposal.action_id, proposal.member_id, proposal.id, proposal.userObj)}          
-    return p1.then((d) => {console.log("exec:",d); return d},(err) => console.log("exec:",err));
+    return p1
 };
 
 
@@ -548,8 +552,8 @@ var InitiateVariables = () => {
             "desc": "The precentage of members vote nedded to Replace Statement.",
             "proposals": []
         },
-        {id : "CM",
-            "type": "CM",
+        {id : "AM",
+            "type": "AM",
             "name": "Committee Member",
             "value": 50,
             "desc": "The precentage of members vote nedded for assigning a Member to an Action.",
@@ -587,6 +591,18 @@ var InitiateVariables = () => {
     )
 }
 
+/*----------------------PROXY FUNCTIONS-------------------------------*/
+/*
+var getMembershipsTree = (KBZ, member_id) => {
+    var memberships = r.table(KBZ).get(member_id)('memberships')('live')
+    .then()
+    if(Object.keys(memberships).length === 0) return {KBZ : member_id}
+        else {
+            return Object.keys(memberships).map((m)=> getMembershipsTree(m,memberships.m))
+        }
+
+
+*/
 /*-------------------------Tests--------------------------------------*/
 
 var testStatement = (k) => {
@@ -610,11 +626,10 @@ var kbzHiarchyTest = ()=> {
         ]).then((members) => {
             console.log ("members:",members)
             return Promise.all([CreateAction(kbz.id,201,"first"), CreateAction(kbz.id,202,"second")]).then((actions)=>{
-                console.log ("actions:",actions)
                 return Promise.all(actions.map((action)=>{
                     return Promise.all([
-                        CreateMember(action.id,kbz.id,members[0].id.id,301),
-                        CreateMember(action.id,kbz.id,members[1].id.id,302
+                        CreateMember(action.id,kbz.id,Members[0].id,301),
+                        CreateMember(action.id,kbz.id,Members[1].id,302
                             )                        
                         ])
                  }).then((pa)=> console.log("pa",pa),(err)=> console.log("err:",err))
@@ -641,154 +656,126 @@ var pulseTest = () => {
     .then((kbz) => {
         Kbz = kbz.id
         console.log('createkbz: ',Kbz)
-        return r.table(Kbz).filter(r.row('memberStatus').eq(1))('id')
+        return r.table(Kbz).filter(r.row('memberStatus').eq(1))
     })
 
     .then((members)=>{
         Members = members
-        console.log('Members: ',Members)
         var p1 = CreateProposal(Kbz,null,"let me in user5","ME",Users[4].id,{parent : 'users',parent_member : Users[4].id, userObj : Users[4].obj}),
             p2 = CreateProposal(Kbz,null,"let me in user4","ME",Users[3].id,{parent : 'users',parent_member : Users[3].id, userObj : Users[3].obj}),
-            p3 = CreateProposal(Kbz,Members[0],"holes in my head","NS",0,{statement : 'hey beenn trying to...'}),                
-            p4 = CreateProposal(Kbz,Members[1],"freaky like that","CV",0,{variableName : 'Name', newValue : "la freak"}),
-            p5 = CreateProposal(Kbz,Members[0],"lets doo some work!!","CA",0,{actionName : "FloosEveryMornuing"}),
-            p6 = CreateProposal(Kbz,Members[0],"dont do nothing","CA",0,{actionName : "getitstaiot"})
-            p7 = CreateProposal(Kbz,Members[0],"we are on it!","CA",0,{actionName : "fill it up"})            
+            p3 = CreateProposal(Kbz,Members[0].id,"holes in my head","NS",0,{statement : 'hey beenn trying to...'}),                
+            p4 = CreateProposal(Kbz,Members[1].id,"freaky like that","CV",0,{variableName : 'Name', newValue : "la freak"}),
+            p5 = CreateProposal(Kbz,Members[0].id,"lets doo some work!!","CA",0,{actionName : "FloosEveryMornuing"}),
+            p6 = CreateProposal(Kbz,Members[0].id,"dont do nothing","CA",0,{actionName : "getitstaiot"})
+            p7 = CreateProposal(Kbz,Members[0].id,"we are on it!","CA",0,{actionName : "fill it up"})            
             return Promise.all([p1,p2,p3,p4,p5,p6,p7])
     },(err)=> console.log("members err: ",err))
 
     .then((proposals)=>{
         Proposals = proposals
         console.log('Proposals: ',Proposals)
-        var p1 = Support(Kbz,Proposals[0].id,Members[1]),
-            p2 = Support(Kbz,Proposals[0].id,Members[0]),
-            p3 = Support(Kbz,Proposals[2].id,Members[2]),
-            p4 = Support(Kbz,Proposals[2].id,Members[1]),
-            p5 = Support(Kbz,Proposals[1].id,Members[2]),
-            p6 = Support(Kbz,Proposals[4].id,Members[0]),
-            p7 = Support(Kbz,Proposals[5].id,Members[2]),
-            p8 = Support(Kbz,Proposals[3].id,Members[0])
+        var p1 = Support(Kbz,Proposals[0].id,Members[1].id),
+            p2 = Support(Kbz,Proposals[0].id,Members[0].id),
+            p3 = Support(Kbz,Proposals[2].id,Members[2].id),
+            p4 = Support(Kbz,Proposals[2].id,Members[1].id),
+            p5 = Support(Kbz,Proposals[1].id,Members[2].id),
+            p6 = Support(Kbz,Proposals[4].id,Members[0].id),
+            p7 = Support(Kbz,Proposals[5].id,Members[2].id),
+            p8 = Support(Kbz,Proposals[3].id,Members[0].id)
         return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8])
     },(err)=> console.log("proposals err: ",err))
 
     .then((x)=> {
         console.log("SUPPORT1:",x)
-        var p1 = pulseSupport(Kbz,Members[1]),
-            p2 = pulseSupport(Kbz,Members[0])
+        var p1 = pulseSupport(Kbz,Members[1].id),
+            p2 = pulseSupport(Kbz,Members[0].id)
         return Promise.all([p1,p2])
     },(err)=> console.log("first pulse err: ",err))
 
     .then((x)=>{
         console.log('pulseSupport: ',x)
-        var p1 = vote(Kbz,Proposals[0].id,Members[1],1),
-            p2 = vote(Kbz,Proposals[0].id,Members[0],1),
-            p3 = vote(Kbz,Proposals[2].id,Members[2],1),
-            p4 = vote(Kbz,Proposals[2].id,Members[1],1),
-            p5 = vote(Kbz,Proposals[1].id,Members[2],1),
-            p6 = vote(Kbz,Proposals[4].id,Members[0],1),
-            p7 = vote(Kbz,Proposals[4].id,Members[2],1),
-            p8 = vote(Kbz,Proposals[5].id,Members[0],1),
-            p9 = vote(Kbz,Proposals[3].id,Members[0],1)                        
+        var p1 = vote(Kbz,Proposals[0].id,Members[1].id,1),
+            p2 = vote(Kbz,Proposals[0].id,Members[0].id,1),
+            p3 = vote(Kbz,Proposals[2].id,Members[2].id,1),
+            p4 = vote(Kbz,Proposals[2].id,Members[1].id,1),
+            p5 = vote(Kbz,Proposals[1].id,Members[2].id,1),
+            p6 = vote(Kbz,Proposals[4].id,Members[0].id,1),
+            p7 = vote(Kbz,Proposals[4].id,Members[2].id,1),
+            p8 = vote(Kbz,Proposals[5].id,Members[0].id,1),
+            p9 = vote(Kbz,Proposals[3].id,Members[0].id,1)                        
         return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8,p9])
     },(err)=> console.log("first votes err: ",err))
 
     .then((x)=> {
         console.log("SUPPORT2:",x)
-        var p1 = pulseSupport(Kbz,Members[1]),
-            p2 = pulseSupport(Kbz,Members[0])
+        var p1 = pulseSupport(Kbz,Members[1].id),
+            p2 = pulseSupport(Kbz,Members[0].id)
         return Promise.all([p1,p2])//.then((x) =>console.log('pulseSupport: ',x))
     },(err)=> console.log("second pulse err: ",err))
 
     .then((x) => {
         console.log('pulseSupport: ',x)
         return r.table(Kbz).get('TheKbzDocument')('actions')('live').then((actions) => {
-            Actions = actions
-            var p1 = CreateProposal(Kbz,Members[2],"letmeinaction3","AM",0,{action_id : Actions[0], userObj : Members[2].obj}),
-                p2 = CreateProposal(Kbz,Members[3],"letmeinaction4","AM",0,{action_id : Actions[0], userObj : Members[3].obj}),
-                p3 = CreateProposal(Kbz,Members[0],"letmeinaction1","AM",0,{action_id : Actions[0], userObj : Members[0].obj}),
-                p4 = CreateProposal(Kbz,Members[1],"letmeinaction2","AM",0,{action_id : Actions[1], userObj : Members[1].obj})            
-            return r.table(Kbz).filter({proposalStatus : 1}).then((statements) => {
+            console.log("Actions:::",actions);
+           
+            Actions = Object.keys(actions);
+            return r.table(Kbz).filter({statementStatus : 1}).then((statements) => {
+                console.log("Statements",statements);
                 Statements = statements
-                var p5 = CreateProposal(Kbz,Members[1],"replace this satateememenet",'RS',0,{satatement : "with this one", statement_id : Statements[0]}),
-                    p6 = CreateProposal(Kbz,Members[2],"cancel it !!",'CS',0,{statement_id :Statements[0]})
-                return Promise.all([p1,p2,p3,p4,p5,p6])
-        })
-        })
+                var p5 = CreateProposal(Kbz,Members[1].id,"replace this satateememenet",'RS',0,{statement : "with this one", statement_id : Statements[0].id}),
+                    p1 = CreateProposal(Kbz,Members[2].id,"letmeinaction3",'AM',0,{action_id : Actions[0], member_id : Members[2].id, userObj : Members[2].userObj}),
+                    p2 = CreateProposal(Kbz,Members[2].id,"letmeinaction2",'AM',0,{action_id : Actions[1], member_id : Members[2].id, userObj : Members[2].userObj}),
+                    p3 = CreateProposal(Kbz,Members[0].id,"letmeinaction1",'AM',0,{action_id : Actions[0], member_id : Members[0].id, userObj : Members[0].userObj}),
+                    p4 = CreateProposal(Kbz,Members[1].id,"letmeinaction4",'AM',0,{action_id : Actions[1], member_id : Members[1].id, userObj : Members[1].userObj})                     
+                return Promise.all([p1,p2,p3,p4,p5])
+        },(err)=> console.log("debug 1 second pulse err: ",err))
+        },(err)=> console.log("debug 2 second pulse err: ",err))
     },(err)=> console.log("another proposals: ",err))
 
-} 
-/*
-var pulseTest = () => {
-    var userlist = ['uri1','uri2','uri3','uri4','uri5','uri6']
-    return Promise.all(userlist.map((username) => { return CreateUser({user_name : username, email : username+"@gmail.com", image : "http://phootoos/"+username+".jpg",age :56})}))
-    .then((users) => {
-        CreateKbz('users',3,"PULSEtestKBZ",[users[0].obj,users[1].obj,users[2].obj])
-        .then((kbz) => {
-            kbz = kbz.id
-            console.log('createkbz: ',kbz)
-            r.table(kbz).filter(r.row('memberStatus').eq(1))('id')
-            .then((members)=>{
-                console.log('members: ',members)
-                var p1 = CreateProposal(kbz,null,"let me in user5","ME",users[4].id,{parent : 'users',parent_member : users[4].id, userObj : users[4].obj}),
-                    p2 = CreateProposal(kbz,null,"let me in user4","ME",users[3].id,{parent : 'users',parent_member : users[3].id, userObj : users[3].obj}),
-                    p3 = CreateProposal(kbz,members[0],"holes in my head","NS",0,{statement : 'hey beenn trying to...'}),                
-                    p4 = CreateProposal(kbz,members[1],"freaky like that","CV",0,{variableName : 'Name', newValue : "la freak"}),
-                    p5 = CreateProposal(kbz,members[0],"lets doo some work!!","CA",0,{actionName : "FloosEveryMornuing"}),
-                    p6 = CreateProposal(kbz,members[0],"dont do nothing","CA",0,{actionName : "getitstaiot"}),
-                    p6 = CreateProposal(kbz,members[0],"dont do nothing","CA",0,{actionName : "getitstaiot"})                    
-                return Promise.all([p1,p2,p3,p4,p5,p6])
-                .then((proposals1)=>{
-                    console.log('proposals: ',proposals)
-                    var p1 = Support(kbz,proposals[0].id,members[1]),
-                        p2 = Support(kbz,proposals[0].id,members[0]),
-                        p3 = Support(kbz,proposals[2].id,members[2]),
-                        p4 = Support(kbz,proposals[2].id,members[1]),
-                        p5 = Support(kbz,proposals[1].id,members[2]),
-                        p6 = Support(kbz,proposals[4].id,members[0]),
-                        p7 = Support(kbz,proposals[4].id,members[2]),
-                        p8 = Support(kbz,proposals[3].id,members[0])
-                return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8])
-                .then((x)=> {
-                    console.log("SUPPORT1:",x)
-                    var p1 = pulseSupport(kbz,members[1]),
-                        p2 = pulseSupport(kbz,members[0])
-                return Promise.all([p1,p2])
-                .then((x)=>{
-                    console.log('pulseSupport: ',x)
-                    var p1 = vote(kbz,proposals[0].id,members[1],1),
-                        p2 = vote(kbz,proposals[0].id,members[0],1),
-                        p3 = vote(kbz,proposals[2].id,members[2],1),
-                        p4 = vote(kbz,proposals[2].id,members[1],1),
-                        p5 = vote(kbz,proposals[1].id,members[2],1),
-                        p6 = vote(kbz,proposals[4].id,members[0],1),
-                        p7 = vote(kbz,proposals[4].id,members[2],1),
-                        p8 = vote(kbz,proposals[3].id,members[0],1),
-                        p9 = vote(kbz,proposals[3].id,members[0],1)                        
-                return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8,p9])
-                .then((x)=> {
-                    console.log("SUPPORT2:",x)
-                    var p1 = pulseSupport(kbz,members[1]),
-                        p2 = pulseSupport(kbz,members[0])
-                    return Promise.all([p1,p2])
-                    }).then((x)->{
-                        console.log('pulseSupport: ',x)
-                        r.table(kbz).get('TheKbzDocument')('actions')('live').then((action) => {
-                            var p1 = CreateProposal(kbz,members[2],"letmeinaction3","AM",0,{action_id : action[0], userObj : members[2].obj}),
-                                p2 = CreateProposal(kbz,members[3],"letmeinaction4","AM",0,{action_id : action[0], userObj : members[3].obj}),
-                                p3 = CreateProposal(kbz,members[0],"letmeinaction1","AM",0,{action_id : action[0], userObj : members[0].obj}),
-                                p4 = CreateProposal(kbz,members[1],"letmeinaction2","AM",0,{action_id : action[0], userObj : members[1].obj}),
-                                p5 = CreateProposal(kbz,members[1])
 
-                        return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8,p9])
-                        })
-                   })
-            },(err)=> console.log("supporterr",err))
-            },(err)=> console.log("proposalerr",err))
-        },(err)=> console.log("memberss",err))
-    },(err)=> console.log("kbzz",err))
-    },(err)=> console.log("end",err)).then((d)=> console.log("d:",d), (err)=> console.log("errr:",err))
-}    
-*/
+    .then((proposals)=>{ 
+        Proposals = proposals
+        console.log('Proposals3: ',Proposals)
+        var p1 = Support(Kbz,Proposals[0].id,Members[1].id),
+            p2 = Support(Kbz,Proposals[1].id,Members[0].id),
+            p3 = Support(Kbz,Proposals[2].id,Members[2].id),
+            p4 = Support(Kbz,Proposals[3].id,Members[1].id),
+            p5 = Support(Kbz,Proposals[4].id,Members[2].id)
+        return Promise.all([p1,p2,p3,p4,p5])
+    },(err)=> console.log("proposals err: ",err))
+
+    .then((x)=> {
+        console.log("SUPPORT3:",x)
+        var p1 = pulseSupport(Kbz,Members[1].id),
+            p2 = pulseSupport(Kbz,Members[0].id)
+        return Promise.all([p1,p2])
+    },(err)=> console.log("third pulse err: ",err))
+
+    .then((x)=>{
+        console.log('pulseSupport3: ',x)
+        var p1 = vote(Kbz,Proposals[0].id,Members[1].id,1),
+            p2 = vote(Kbz,Proposals[1].id,Members[0].id,1),
+            p3 = vote(Kbz,Proposals[2].id,Members[2].id,1),
+            p4 = vote(Kbz,Proposals[3].id,Members[1].id,1),
+            p5 = vote(Kbz,Proposals[4].id,Members[2].id,1),
+            p6 = vote(Kbz,Proposals[1].id,Members[1].id,1),
+            p7 = vote(Kbz,Proposals[2].id,Members[1].id,1),
+            p8 = vote(Kbz,Proposals[3].id,Members[0].id,1),
+            p9 = vote(Kbz,Proposals[4].id,Members[1].id,1),
+            p10 = vote(Kbz,Proposals[0].id,Members[0].id,1)
+        return Promise.all([p1,p2,p3,p4,p5,p6,p7,p8,p9,p10])
+    },(err)=> console.log("first votes err: ",err))
+
+    .then((x)=> {
+        console.log("SUPPORT4:",x)
+        var p1 = pulseSupport(Kbz,Members[1].id),
+            p2 = pulseSupport(Kbz,Members[0].id)
+           // p3 = pulseSupport(Kbz,Members[2].id)            
+        return Promise.all([p1,p2])//.then((x) =>console.log('pulseSupport: ',x))
+    },(err)=> console.log("fourth pulse err: ",err))
+
+} 
+
 //InitiateVariables();
 pulseTest();
 //CreateKbz('users','78642460-3f7e-4e38-96ef-c9f8bb2ac0a6',3,'urisFirstKibbuts',[]).then((data)=>{console.log("kbz:",data)});
@@ -802,4 +789,4 @@ pulseTest();
 //CreateProposal('KBZ7f197e5bd4759816720de5ceef2d9','3a1c32bf-2979-4436-b5a8-cc128ca6c5b5',"my first body",'ME','3a1c32bf-2979-4436-b5a8-cc128ca6c5b5',{thisis : 'uniq'}).then((data)=> {console.log("out",data)});
 //Support('KBZ7f197e5bd4759816720de5ceef2d9','413d081c-7b59-4494-9861-9820d0b62d07', '3a1c32bf-2979-4436-b5a8-cc128ca6c5b4')
 //pulseSupport('KBZ7f197e5bd4759816720de5ceef2d9', 'uri')
-//vote('KBZ7f197e5bd4759816720de5ceef2d9', "d42a2239-9cc9-4908-ada3-777356fbdb05", 'uri3',0 ).then((x)=> console.log(x))
+//vote('KBZ7f197e5bd4759816720de5ceef2d9', "d42a2239-9cc9-4908-ada3-777356fbdb05", 'uri3',0 ).then((x)=> console.log(xs

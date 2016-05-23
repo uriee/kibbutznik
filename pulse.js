@@ -1,7 +1,5 @@
 /*-------DB Functions------*/
-
-
-import r from dbConfig.js
+const {r} = require('./dbConfig')
 
 const randomKbzId = () => {
     var d = new Date().getTime();
@@ -80,7 +78,7 @@ const CreatePulse = (KBZ) =>{
 };
 
 
-export const CreateKbz = (PARENT, proposal_id, name, invitetions) => { 
+const createKbz = (PARENT, proposal_id, name, invitetions) => { 
 console.log("in CreateKbz:",PARENT, proposal_id, name)   
     var kbz = {id : 'TheKbzDocument',
                 parent : PARENT,
@@ -134,7 +132,7 @@ console.log("in CreateKbz:",PARENT, proposal_id, name)
                (err) => Promise.reject(new Error("err in CreateKbz:" + err)))           
 }
 
-
+exports.CreateKbz = createKbz
 
 const CreateMember = (KBZ, PARENT, parent_member, proposal_id, userObj) => {
     if (!KBZ) return Promise.reject(new Error ("CreateMember wrong parameters"));
@@ -162,7 +160,7 @@ const CreateMember = (KBZ, PARENT, parent_member, proposal_id, userObj) => {
 
 
 const CreateAction = (PARENT, proposal_id, action_name) => {
-    return CreateKbz(PARENT, 0, proposal_id, action_name)
+    return createKbz(PARENT, 0, proposal_id, action_name)
         .then((data) => {
             console.log('action_id',data.id);
             return r.table(PARENT).get('TheKbzDocument').update({'actions' : {'live' : r.row('actions')('live').merge(r.object(data.id , 1))}}).run()
@@ -239,14 +237,6 @@ const RemoverActionMember = (PARENT, member_id, proposal_id, userObj) => {
     return CreateProposal(PARENT, 0 ,'RA', member_id, Object.Assign({},usreObj,{proposal : proposal_id}));
 } 
 
-const AssignetoPulse = (KBZ, proposal_id, pulse_id) => {
-    console.log("In AssignetoPulse", proposal_id,pulse_id);
-    return Promise.all([
-        r.table(KBZ).get(proposal_id).update({proposalStatus : 4}).run(),
-        r.table(KBZ).get(pulse_id).update({Assigned : r.row('Assigned').setInsert(proposal_id)}).run()
-        ]).then((d) => d, (d)=>{console.log("err:",d)})
-};
-
 
 var PulseOnTheAir = (KBZ, pulse_id, variables) => {
     console.log("IN PulseOnTheAir", pulse_id);
@@ -314,7 +304,7 @@ var Execute = function(KBZ, proposal) {
     return p1
 };
 
-export const Pulse = (KBZ) => {
+exports.Pulse = (KBZ) => {
     var p1 = r.table(KBZ).get('TheKbzDocument')
         p2 = r.table(KBZ).get('variables')
     return Promise.all([p1,p2]).then((data) =>{

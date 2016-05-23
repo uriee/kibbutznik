@@ -1,21 +1,17 @@
 
-require  r from dbConfig.js
-const r = require('dbConfig')
-const {createkbz, Pulse}  = require(pulse)
+const {r} = require('./dbConfig')
+const {CreateKbz, Pulse}  = require('./pulse')
 
-module.exports = {
-    sqrt: sqrt,
-    square: square,
-    diag: diag,
-};
-const CreateUser = (userObj) =>{
+exports.CreateKbz = CreateKbz
+
+exports.CreateUser = (userObj) =>{
     userObj.memberships = {live : {}, past : {}};
     return r.table('users').insert(userObj,{returnChanges : true})
     .then((user)=> Promise.resolve({KBZ : 'users' , id : user.generated_keys[0], obj: user.changes[0].new_val, desc : "New User has been Created" }),
           (err) => Promise.reject(new Error("err in CreateUser:" + err)))
     };
 
-const CreateProposal = (KBZ, initiator, body, type, fid, uniq) => {
+exports.CreateProposal = (KBZ, initiator, body, type, fid, uniq) => {
     console.log("in CreateProposal:" , body, type, fid, uniq)
     var Proposal = {};
     Proposal.initiator = initiator;
@@ -52,7 +48,7 @@ const CreateProposal = (KBZ, initiator, body, type, fid, uniq) => {
     };
 
 
-const Support = (KBZ, proposal_id, member_id) => {
+exports.Support = (KBZ, proposal_id, member_id) => {
     console.log("support1:",KBZ, proposal_id, member_id)
 
     var p1 = r.table(KBZ).get('TheKbzDocument').pluck('size' , {'pulses' : ["Assigned"]})
@@ -87,7 +83,16 @@ const Support = (KBZ, proposal_id, member_id) => {
         }).then((ret) => ret, (err) => new Error("Error in support function: " + err))
     }
 
-exoprt const pulseSupport = (KBZ, member_id) => {
+
+const AssignetoPulse = (KBZ, proposal_id, pulse_id) => {
+    console.log("In AssignetoPulse", proposal_id,pulse_id);
+    return Promise.all([
+        r.table(KBZ).get(proposal_id).update({proposalStatus : 4}).run(),
+        r.table(KBZ).get(pulse_id).update({Assigned : r.row('Assigned').setInsert(proposal_id)}).run()
+        ]).then((d) => d, (d)=>{console.log("err:",d)})
+};
+
+exports.pulseSupport = (KBZ, member_id) => {
         return r.table(KBZ).get('variables')('PulseSupport')('value').then((PulseSupport)=> {
             return r.table(KBZ).get('TheKbzDocument').update(function (kbz) {   
                         return kbz.merge(r.branch(kbz('pulsesupport')('members').offsetsOf(member_id).isEmpty(),
@@ -110,7 +115,8 @@ exoprt const pulseSupport = (KBZ, member_id) => {
             }).then((ret) => ret, (err) => new Error("Error in pulseSupport function: " + err))
     }
 
-export const vote = (KBZ, proposal_id, member_id, vote) => {
+
+exports.vote = (KBZ, proposal_id, member_id, vote) => {
     //console.log("vote param:",KBZ, proposal_id, member_id, vote)
     var pro = 0,
         against = 0;
@@ -130,4 +136,4 @@ export const vote = (KBZ, proposal_id, member_id, vote) => {
     }
 
 
-const comment = () => {}
+exports.comment = () => {}

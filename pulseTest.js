@@ -1,6 +1,6 @@
-const r =  require('dbConfig.js')
-const  {CreateProposal, Support, pulseSupport, vote} = require('be')
-
+const {r} = require('./dbConfig')
+const  {CreateKbz, CreateUser, CreateProposal, Support, pulseSupport, vote} = require('./be')
+console.log(CreateKbz)
 const pulseTest = () => {
     var userlist = ['uri1','uri2','uri3','uri4','uri5','uri6'],
         Members = [],
